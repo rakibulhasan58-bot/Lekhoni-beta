@@ -72,7 +72,14 @@ const VisualStoryView: React.FC<VisualStoryViewProps> = ({ story, chapter, onUpd
     });
 
     try {
-      const images = await generateImage(scene.description, { 
+      // Enhance prompt with story context
+      const enhancedPrompt = `
+Story Genre: ${story.genre}
+Story Context (Synopsis): ${story.synopsis ? story.synopsis.slice(0, 500) : 'N/A'}
+Detailed Scene Description: ${scene.description}
+      `.trim();
+
+      const images = await generateImage(enhancedPrompt, { 
           isAdult: story.isAdult,
           style: globalStyle,
           count: globalCount
