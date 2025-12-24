@@ -143,6 +143,8 @@ export const generateImage = async (
     ${contentStyle}
     Quality: 4k resolution, masterpiece.`;
 
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
   // Function to perform a single generation request
   const generateSingleImage = async (): Promise<string> => {
       try {
@@ -174,24 +176,55 @@ export const generateImage = async (
             throw new Error(`Model Refused: ${refusalText.slice(0, 100)}...`);
         }
         throw new Error("No image data returned from API");
-      } catch (error) {
-          console.error("Single Image Generation Error:", error);
+      } catch (error: any) {
           throw error;
       }
   };
 
-  // Run requests in parallel based on count
-  const promises = Array.from({ length: count }).map(() => generateSingleImage());
-  const results = await Promise.allSettled(promises);
-  
-  const successfulImages = results
-      .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled')
-      .map(r => r.value);
+  const successfulImages: string[] = [];
 
-  // If we got at least one image, return it. If all failed, throw the first error.
+  // Sequential Execution Loop to handle Rate Limits (429)
+  // We process one by one with delays to stay within quota.
+  for (let i = 0; i < count; i++) {
+      let attempts = 0;
+      let generated = false;
+
+      while (attempts < 3 && !generated) {
+          try {
+              const img = await generateSingleImage();
+              successfulImages.push(img);
+              generated = true;
+          } catch (error: any) {
+              attempts++;
+              
+              // Check for Rate Limit / Quota Exceeded
+              const isRateLimit = 
+                  (error.message && error.message.includes('429')) ||
+                  (error.status === 429) ||
+                  (error.error && error.error.code === 429) ||
+                  (error.message && error.message.includes('RESOURCE_EXHAUSTED'));
+
+              if (isRateLimit) {
+                  // Exponential backoff: 2s, 4s, 8s
+                  const waitTime = 2000 * Math.pow(2, attempts);
+                  console.warn(`Quota exceeded (429). Retrying image ${i+1}/${count} in ${waitTime/1000}s...`);
+                  await delay(waitTime);
+              } else {
+                  console.error(`Image ${i+1} failed:`, error);
+                  // If it's not a rate limit error (e.g. safety), break inner loop to skip this image
+                  break; 
+              }
+          }
+      }
+
+      // If successful, add a polite delay before the next request to avoid triggering rate limit again immediately
+      if (generated && i < count - 1) {
+          await delay(2000); 
+      }
+  }
+
   if (successfulImages.length === 0) {
-      const firstError = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
-      throw firstError ? firstError.reason : new Error("Failed to generate any images.");
+      throw new Error("Unable to generate images. Please check your API quota.");
   }
 
   return successfulImages;

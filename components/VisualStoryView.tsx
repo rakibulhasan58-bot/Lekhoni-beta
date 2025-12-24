@@ -206,7 +206,7 @@ const VisualStoryView: React.FC<VisualStoryViewProps> = ({ story, chapter, onUpd
                                 <input 
                                     type="range" 
                                     min="1" 
-                                    max="4" 
+                                    max="30" 
                                     step="1"
                                     value={globalCount}
                                     onChange={(e) => setGlobalCount(parseInt(e.target.value))}
@@ -214,7 +214,7 @@ const VisualStoryView: React.FC<VisualStoryViewProps> = ({ story, chapter, onUpd
                                 />
                                 <div className="flex justify-between text-[10px] text-gray-400 mt-1">
                                     <span>1</span>
-                                    <span>4</span>
+                                    <span>30</span>
                                 </div>
                             </div>
                         </div>

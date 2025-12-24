@@ -218,7 +218,7 @@ ${charList}`;
                         <input 
                             type="range" 
                             min="1" 
-                            max="4" 
+                            max="30" 
                             step="1"
                             value={imageCount}
                             onChange={(e) => setImageCount(parseInt(e.target.value))}
@@ -227,7 +227,7 @@ ${charList}`;
                     </div>
                     <div className="flex justify-between text-[10px] text-gray-400 mt-1 px-1">
                         <span>1</span>
-                        <span>4</span>
+                        <span>30</span>
                     </div>
                  </div>
 
