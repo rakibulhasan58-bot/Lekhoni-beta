@@ -105,8 +105,8 @@ const VisualStoryView: React.FC<VisualStoryViewProps> = ({ story, chapter, onUpd
           errorMessage = "Permission denied (403). API key issue.";
       } else if (msg.includes('429')) {
           errorMessage = "Too many requests. Wait a moment.";
-      } else if (msg.includes('Refused') || msg.includes('Safety')) {
-          errorMessage = "Safety block. Try a milder prompt.";
+      } else if (msg.includes('Refused') || msg.includes('Safety') || msg.includes('PROHIBITED')) {
+          errorMessage = "Content blocked by safety filters. Modify prompt.";
       } else if (msg.includes('No image data')) {
           errorMessage = "No image returned. Try modifying the prompt.";
       }

@@ -118,8 +118,8 @@ ${charList}`;
       console.error(e);
       if (e.message && e.message.includes('403')) {
         setError("Permission denied. Your API key may not support this model. Using a free key?");
-      } else if (e.message && e.message.includes('Refused')) {
-        setError("The model refused to generate this content due to safety guidelines.");
+      } else if (e.message && (e.message.includes('Refused') || e.message.includes('Safety') || e.message.includes('PROHIBITED'))) {
+        setError("Content prohibited by safety policies. Try a different prompt.");
       } else {
         setError("An error occurred while generating content. Please try again.");
       }

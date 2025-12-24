@@ -168,7 +168,7 @@ ${contentStyle}`;
 
         // 2. Check finish reason for specific errors
         if (candidate.finishReason && candidate.finishReason !== "STOP") {
-             // Common reasons: SAFETY, RECITATION, OTHER
+             // Common reasons: SAFETY, RECITATION, PROHIBITED_CONTENT, OTHER
              throw new Error(`Image generation stopped. Reason: ${candidate.finishReason}`);
         }
 
@@ -223,7 +223,13 @@ ${contentStyle}`;
                   (error.error && error.error.code === 429) ||
                   (error.message && error.message.includes('RESOURCE_EXHAUSTED'));
               
-              const isSafety = error.message && (error.message.includes('SAFETY') || error.message.includes('blocked') || error.message.includes('Reason: SAFETY'));
+              const isSafety = error.message && (
+                  error.message.includes('SAFETY') || 
+                  error.message.includes('blocked') || 
+                  error.message.includes('Reason: SAFETY') ||
+                  error.message.includes('PROHIBITED_CONTENT') // Explicitly handle prohibited content
+              );
+              
               const isRefusal = error.message && error.message.includes("Model responded with text");
 
               if (isRateLimit) {
@@ -235,7 +241,7 @@ ${contentStyle}`;
                   interRequestDelay = 2000;
               } else if (isSafety) {
                   // Safety blocks are usually permanent for a specific prompt. Don't retry.
-                  console.error(`Image ${i+1} blocked by safety:`, error.message);
+                  console.error(`Image ${i+1} blocked by safety/policy:`, error.message);
                   break; 
               } else if (isRefusal) {
                   // If the model just chatted, maybe a retry will get it to behave.
@@ -263,7 +269,7 @@ ${contentStyle}`;
   }
 
   if (successfulImages.length === 0) {
-      throw new Error("Unable to generate images. The model may be busy or the prompt triggered safety filters.");
+      throw new Error("Unable to generate images. The prompt likely triggered safety filters (Prohibited Content) or the model is overloaded.");
   }
 
   return successfulImages;
