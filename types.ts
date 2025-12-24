@@ -22,11 +22,20 @@ export interface Character {
   description: string;
 }
 
+export interface Scene {
+  id: string;
+  description: string; // The prompt used
+  imageUrl?: string;
+  variants?: string[]; // Store multiple variations
+  timestamp: number;
+}
+
 export interface Chapter {
   id: string;
   title: string;
   content: string;
   lastModified: number;
+  scenes?: Scene[];
 }
 
 export interface Story {

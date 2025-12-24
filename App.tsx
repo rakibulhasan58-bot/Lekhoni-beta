@@ -35,7 +35,15 @@ const App: React.FC = () => {
 
   // Save to local storage whenever stories change
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stories));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stories));
+    } catch (e) {
+      console.error("Storage Error", e);
+      // Basic quota management: alert user but don't crash
+      if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+          alert("Storage full! Images cannot be saved. Please delete old stories or scenes to free up space.");
+      }
+    }
   }, [stories]);
 
   const toggleTheme = () => {
