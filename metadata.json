@@ -1,0 +1,7 @@
+{
+  "name": "Lekhoni - Bengali Novelist",
+  "description": "A powerful, free, and distraction-free writing app for Bengali novels and stories. Features AI assistance, character management, and 18+ content categorization.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

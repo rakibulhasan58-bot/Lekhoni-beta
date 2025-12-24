@@ -1,0 +1,371 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Save, ChevronLeft, Plus, Trash2, Users, FileText, Settings, Bot, Moon, Sun, Mic, MicOff } from 'lucide-react';
+import { Story, Chapter, Character } from '../types';
+import WritingAssistant from './WritingAssistant';
+
+interface StoryEditorProps {
+  story: Story;
+  onSave: (story: Story) => void;
+  onBack: () => void;
+  isDarkMode: boolean;
+  toggleTheme: () => void;
+}
+
+// Add type definition for Web Speech API
+declare global {
+  interface Window {
+    SpeechRecognition: any;
+    webkitSpeechRecognition: any;
+  }
+}
+
+const StoryEditor: React.FC<StoryEditorProps> = ({ story, onSave, onBack, isDarkMode, toggleTheme }) => {
+  const [activeChapterId, setActiveChapterId] = useState<string>(story.chapters[0]?.id || '');
+  const [activeView, setActiveView] = useState<'editor' | 'characters' | 'settings'>('editor');
+  const [showAI, setShowAI] = useState(false);
+  const [localStory, setLocalStory] = useState<Story>(story);
+  const [isListening, setIsListening] = useState(false);
+  
+  // Refs
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  const activeChapter = localStory.chapters.find(c => c.id === activeChapterId);
+
+  useEffect(() => {
+    // If no chapter exists, create one
+    if (localStory.chapters.length === 0) {
+      const newChapter: Chapter = {
+        id: crypto.randomUUID(),
+        title: 'Chapter 1',
+        content: '',
+        lastModified: Date.now(),
+      };
+      const updatedStory = { ...localStory, chapters: [newChapter] };
+      setLocalStory(updatedStory);
+      setActiveChapterId(newChapter.id);
+      onSave(updatedStory);
+    } else if (!activeChapterId && localStory.chapters.length > 0) {
+        setActiveChapterId(localStory.chapters[0].id);
+    }
+  }, [localStory.chapters.length]);
+
+  // Speech Recognition Setup
+  useEffect(() => {
+    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'bn-BD'; // Default to Bengali (Bangladesh)
+
+      recognition.onresult = (event: any) => {
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
+        }
+        
+        if (finalTranscript) {
+          handleInsertText(finalTranscript + ' ');
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error', event.error);
+        if (event.error === 'not-allowed') {
+          setIsListening(false);
+          alert('Microphone access denied. Please allow microphone access to use speech-to-text.');
+        }
+        // Auto-restart on some errors if needed, but safer to stop
+        if (event.error !== 'no-speech') {
+             setIsListening(false);
+        }
+      };
+      
+      recognition.onend = () => {
+          // If we are still supposed to be listening, restart (handling silence timeouts)
+          // But managing state properly is better. 
+          // For now, let it stop and update UI.
+          // Note: Logic inside onend needs to check a ref if we want "always on" behavior, 
+          // but clicking the button again is safer UX than infinite loops.
+          if (isListening) {
+             // Optional: recognition.start(); 
+             // We'll let it toggle off to avoid loops
+             setIsListening(false);
+          }
+      };
+
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (e) {
+        console.error("Failed to start recognition:", e);
+      }
+    }
+  };
+
+  const handleUpdateChapter = (content: string) => {
+    if (!activeChapter) return;
+    
+    const updatedChapters = localStory.chapters.map(c => 
+      c.id === activeChapterId ? { ...c, content, lastModified: Date.now() } : c
+    );
+    
+    const newStory = { ...localStory, chapters: updatedChapters, updatedAt: Date.now() };
+    setLocalStory(newStory);
+
+    // Debounced Save
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      onSave(newStory);
+    }, 1000);
+  };
+
+  const handleInsertText = (textToInsert: string) => {
+    if (!activeChapter) return;
+
+    if (textareaRef.current) {
+        const start = textareaRef.current.selectionStart;
+        const end = textareaRef.current.selectionEnd;
+        const text = activeChapter.content;
+        const before = text.substring(0, start);
+        const after = text.substring(end, text.length);
+        
+        // Insert text
+        const newContent = before + textToInsert + after;
+        handleUpdateChapter(newContent);
+        
+        // Use timeout to restore cursor position after render
+        setTimeout(() => {
+            if (textareaRef.current) {
+                const newCursorPos = start + textToInsert.length;
+                textareaRef.current.selectionStart = newCursorPos;
+                textareaRef.current.selectionEnd = newCursorPos;
+                textareaRef.current.focus();
+            }
+        }, 0);
+    } else {
+        const newContent = activeChapter.content + (activeChapter.content ? '\n\n' : '') + textToInsert;
+        handleUpdateChapter(newContent);
+    }
+  };
+
+  const addNewChapter = () => {
+    const newChapter: Chapter = {
+      id: crypto.randomUUID(),
+      title: `Chapter ${localStory.chapters.length + 1}`,
+      content: '',
+      lastModified: Date.now(),
+    };
+    const updatedStory = { 
+      ...localStory, 
+      chapters: [...localStory.chapters, newChapter],
+      updatedAt: Date.now()
+    };
+    setLocalStory(updatedStory);
+    setActiveChapterId(newChapter.id);
+    onSave(updatedStory);
+  };
+
+  const addNewCharacter = () => {
+      const newChar: Character = {
+          id: crypto.randomUUID(),
+          name: 'New Character',
+          role: 'Supporting',
+          description: ''
+      };
+      const updatedStory = {
+          ...localStory,
+          characters: [...localStory.characters, newChar]
+      };
+      setLocalStory(updatedStory);
+      onSave(updatedStory);
+  };
+
+  const updateCharacter = (id: string, field: keyof Character, value: string) => {
+      const updatedChars = localStory.characters.map(c => 
+          c.id === id ? { ...c, [field]: value } : c
+      );
+      const updatedStory = { ...localStory, characters: updatedChars };
+      setLocalStory(updatedStory);
+      onSave(updatedStory);
+  };
+
+  return (
+    <div className="h-screen flex flex-col bg-white dark:bg-gray-900 overflow-hidden">
+      {/* Top Bar */}
+      <header className="h-14 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4 bg-white dark:bg-gray-900 z-10">
+        <div className="flex items-center space-x-4">
+          <button onClick={onBack} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full text-gray-600 dark:text-gray-300">
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <div className="flex flex-col">
+            <h1 className="font-semibold text-gray-900 dark:text-gray-100 leading-tight">{localStory.title}</h1>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {localStory.isAdult && <span className="text-red-500 font-bold mr-2">18+</span>}
+              {localStory.chapters.length} Chapters • {localStory.characters.length} Characters
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center space-x-2">
+            <button 
+                onClick={toggleListening}
+                className={`p-2 rounded-full transition-all duration-300 ${
+                    isListening 
+                    ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 animate-pulse ring-2 ring-red-500 ring-offset-2 dark:ring-offset-gray-900' 
+                    : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'
+                }`}
+                title="Speech to Text (Bengali)"
+            >
+                {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+            </button>
+            <button 
+                onClick={toggleTheme}
+                className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+            >
+                {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+            <button 
+                onClick={() => setShowAI(!showAI)}
+                className={`flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${showAI ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+            >
+                <Bot className="w-4 h-4 mr-2" />
+                AI Assist
+            </button>
+            <button className="flex items-center px-3 py-1.5 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-md text-sm font-medium">
+                <Save className="w-4 h-4 mr-2" />
+                Saved
+            </button>
+        </div>
+      </header>
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar Navigation */}
+        <aside className="w-64 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex flex-col">
+          <div className="p-2 flex space-x-1 border-b border-gray-200 dark:border-gray-800">
+            <button 
+              onClick={() => setActiveView('editor')}
+              className={`flex-1 py-2 text-xs font-medium rounded ${activeView === 'editor' ? 'bg-white dark:bg-gray-800 shadow text-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Chapters
+            </button>
+            <button 
+              onClick={() => setActiveView('characters')}
+              className={`flex-1 py-2 text-xs font-medium rounded ${activeView === 'characters' ? 'bg-white dark:bg-gray-800 shadow text-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Characters
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-2">
+            {activeView === 'editor' && (
+              <div className="space-y-1">
+                {localStory.chapters.map((chapter) => (
+                  <button
+                    key={chapter.id}
+                    onClick={() => setActiveChapterId(chapter.id)}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between group ${activeChapterId === chapter.id ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 font-medium' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                  >
+                    <span className="truncate">{chapter.title}</span>
+                  </button>
+                ))}
+                <button onClick={addNewChapter} className="w-full mt-2 flex items-center justify-center px-3 py-2 border border-dashed border-gray-300 dark:border-gray-700 rounded-md text-sm text-gray-500 hover:border-primary-500 hover:text-primary-500 transition-colors">
+                  <Plus className="w-4 h-4 mr-1" /> New Chapter
+                </button>
+              </div>
+            )}
+
+            {activeView === 'characters' && (
+              <div className="space-y-2">
+                 {localStory.characters.map((char) => (
+                     <div key={char.id} className="bg-white dark:bg-gray-800 p-2 rounded shadow-sm border border-gray-200 dark:border-gray-700">
+                         <input 
+                            value={char.name}
+                            onChange={(e) => updateCharacter(char.id, 'name', e.target.value)}
+                            className="w-full text-sm font-bold bg-transparent border-none focus:ring-0 p-0 text-gray-800 dark:text-gray-200 mb-1"
+                         />
+                         <input 
+                            value={char.role}
+                            onChange={(e) => updateCharacter(char.id, 'role', e.target.value)}
+                            className="w-full text-xs text-gray-500 dark:text-gray-400 bg-transparent border-none focus:ring-0 p-0"
+                         />
+                     </div>
+                 ))}
+                 <button onClick={addNewCharacter} className="w-full mt-2 flex items-center justify-center px-3 py-2 border border-dashed border-gray-300 dark:border-gray-700 rounded-md text-sm text-gray-500 hover:border-primary-500 hover:text-primary-500 transition-colors">
+                  <Users className="w-4 h-4 mr-1" /> Add Character
+                </button>
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* Main Content Area */}
+        <main className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900 relative flex justify-center">
+          {activeView === 'editor' && activeChapter && (
+            <div className="w-full max-w-3xl py-12 px-8 min-h-full bg-white dark:bg-gray-900 shadow-sm dark:shadow-none">
+                <input
+                    type="text"
+                    value={activeChapter.title}
+                    onChange={(e) => {
+                        const newTitle = e.target.value;
+                        const updatedChapters = localStory.chapters.map(c => 
+                            c.id === activeChapterId ? { ...c, title: newTitle } : c
+                        );
+                        const updatedStory = { ...localStory, chapters: updatedChapters };
+                        setLocalStory(updatedStory);
+                        onSave(updatedStory);
+                    }}
+                    className="w-full text-3xl font-bold text-gray-900 dark:text-gray-100 border-none focus:ring-0 placeholder-gray-300 mb-6 bg-transparent"
+                    placeholder="Chapter Title"
+                />
+                <textarea
+                    ref={textareaRef}
+                    value={activeChapter.content}
+                    onChange={(e) => handleUpdateChapter(e.target.value)}
+                    placeholder={isListening ? "Listening... Speak now." : "Start writing your Bengali masterpiece here..."}
+                    className="w-full h-[calc(100vh-250px)] resize-none border-none focus:ring-0 text-lg leading-loose text-gray-800 dark:text-gray-300 font-serif bg-transparent outline-none"
+                    spellCheck={false}
+                />
+            </div>
+          )}
+          
+          {activeView === 'characters' && (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                  <Users className="w-16 h-16 mb-4 opacity-20" />
+                  <p>Select a character from the sidebar to edit details</p>
+              </div>
+          )}
+        </main>
+
+        {/* AI Sidebar */}
+        {showAI && (
+            <WritingAssistant 
+                story={localStory} 
+                currentChapterTitle={activeChapter?.title || ''}
+                currentChapterContent={activeChapter?.content || ''} 
+                onInsert={handleInsertText} 
+            />
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default StoryEditor;
