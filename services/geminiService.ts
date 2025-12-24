@@ -121,27 +121,27 @@ export const generateImage = async (
   const { isAdult, style = 'Bengali Art', count = 1 } = options;
 
   const stylePrompts: Record<string, string> = {
-    'Cinematic': 'Visual Style: Cinematic, high-contrast, moody, dramatic lighting, 8k resolution, highly detailed, depth of field. Use deep colors and atmospheric shadows.',
-    'Photorealistic': 'Visual Style: Photorealistic, 8k resolution, raw photo, realistic textures, ray tracing, hyper-realism.',
-    'Anime': 'Visual Style: Anime style, vibrant colors, detailed backgrounds, emotional atmosphere, distinct character designs.',
-    'Watercolor': 'Visual Style: Watercolor painting, soft edges, artistic, dreamy, paper texture, fluid strokes.',
-    'Impressionistic': 'Visual Style: Impressionist painting, visible brushstrokes, emphasis on light and movement, vibrant colors, artistic interpretation.',
-    'Surrealist': 'Visual Style: Surrealism, dream-like imagery, illogical scenes, unexpected juxtapositions, subconscious themes, Salvador Dali inspired.',
-    'Bengali Art': 'Visual Style: Emulate the distinct aesthetic of popular Bengali novel (Upanyas) covers found in Kolkata. Blend modern digital art with traditional Bengali artistic touches.',
-    'Digital Art': 'Visual Style: High quality digital art, vibrant, clear, detailed.'
+    'Cinematic': 'Style: Cinematic, high-contrast, moody, dramatic lighting, detailed, depth of field.',
+    'Photorealistic': 'Style: Photorealistic, realistic textures, ray tracing, hyper-realism.',
+    'Anime': 'Style: Anime style, vibrant colors, detailed backgrounds, emotional atmosphere.',
+    'Watercolor': 'Style: Watercolor painting, soft edges, artistic, dreamy, paper texture.',
+    'Impressionistic': 'Style: Impressionist painting, visible brushstrokes, vibrant colors.',
+    'Surrealist': 'Style: Surrealism, dream-like imagery, illogical scenes, unexpected juxtapositions.',
+    'Bengali Art': 'Style: Bengali novel cover art style, artistic, cultural aesthetic.',
+    'Digital Art': 'Style: Digital art, vibrant, clear, detailed.'
   };
 
   const selectedStyle = stylePrompts[style] || stylePrompts['Digital Art'];
   
   const contentStyle = isAdult 
-    ? "Tone: Mature, serious, sophisticated composition."
-    : "Tone: Inviting, clear, suitable for general audiences.";
+    ? "Mood: Mature, serious, sophisticated."
+    : "Mood: Inviting, clear, general audience.";
 
-  const imagePrompt = `Generate a high-quality digital illustration.
-    Scene Description: ${prompt}. 
+  // Strictly directive prompt to avoid chatty responses
+  const imagePrompt = `Generate an image. Do not offer descriptions.
+    Visual Description: ${prompt}
     ${selectedStyle}
-    ${contentStyle}
-    Quality: 4k resolution, masterpiece.`;
+    ${contentStyle}`;
 
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -172,8 +172,12 @@ export const generateImage = async (
         }
         
         if (refusalText) {
-            console.warn("Gemini Image Refusal:", refusalText);
-            throw new Error(`Model Refused: ${refusalText.slice(0, 100)}...`);
+            // Check if the refusal is actually a polite chatty success message without data (hallucination)
+            // or a real refusal.
+            console.warn("Gemini Image Text Response:", refusalText);
+            
+            // Heuristic: If text is short and conversational, treat as refusal/failure to generate
+            throw new Error(`Model responded with text instead of image: "${refusalText.slice(0, 100)}..."`);
         }
         throw new Error("No image data returned from API");
       } catch (error: any) {
@@ -211,7 +215,15 @@ export const generateImage = async (
                   await delay(waitTime);
               } else {
                   console.error(`Image ${i+1} failed:`, error);
-                  // If it's not a rate limit error (e.g. safety), break inner loop to skip this image
+                  // If it's a model refusal (text output), retrying strictly might help if it was random,
+                  // but usually it means the prompt is problematic. However, for "chatty" errors, a retry might work.
+                  // We'll retry once for "Model responded with text" errors.
+                  if (error.message.includes("Model responded with text") && attempts < 2) {
+                      await delay(1000);
+                      continue; 
+                  }
+                  
+                  // If it's not a recoverable error, break to skip this image
                   break; 
               }
           }
@@ -224,7 +236,7 @@ export const generateImage = async (
   }
 
   if (successfulImages.length === 0) {
-      throw new Error("Unable to generate images. Please check your API quota.");
+      throw new Error("Unable to generate images. The model may be refusing the prompt or the service is busy.");
   }
 
   return successfulImages;
